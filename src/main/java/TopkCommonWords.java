@@ -57,6 +57,22 @@ public class TopkCommonWords {
         }
     }
 
+    public static class TopKTokenizerMapper
+            extends Mapper<Object, Text, Text, IntWritable>{
+
+        private Text word = new Text();
+
+        public void map(Object key, Text value, Context context
+        ) throws IOException, InterruptedException {
+            // Input is processed one line at a time,
+            // meaning one word and corresponding word count separated by space
+            String[] tokens = value.toString().split("\\s+");
+            word.set(tokens[0]);
+            context.write(word, new IntWritable(Integer.parseInt(tokens[1])));
+        }
+    }
+
+
     public static void main(String[] args) throws Exception {
         stopWords = Files.lines(Paths.get(args[2]))
                 .collect(Collectors.toCollection(HashSet::new));
@@ -83,6 +99,19 @@ public class TopkCommonWords {
         jobWc2.setOutputValueClass(IntWritable.class);
         FileInputFormat.addInputPath(jobWc2, new Path(args[1]));
         FileOutputFormat.setOutputPath(jobWc2, new Path("wc2"));
-        System.exit(jobWc2.waitForCompletion(true) ? 0 : 1);
+        jobWc2.waitForCompletion(true);
+
+        Configuration confTopK = new Configuration();
+        Job jobTopK = Job.getInstance(confTopK, "top k common words");
+        jobTopK.setJarByClass(TopkCommonWords.class);
+        jobTopK.setMapperClass(TopKTokenizerMapper.class);
+        jobTopK.setCombinerClass(IntSumReducer.class);
+        jobTopK.setReducerClass(IntSumReducer.class);
+        jobTopK.setOutputKeyClass(Text.class);
+        jobTopK.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(jobTopK, new Path("wc1", "part-r-00000"));
+        FileInputFormat.addInputPath(jobTopK, new Path("wc2", "part-r-00000"));
+        FileOutputFormat.setOutputPath(jobTopK, new Path(args[3]));
+        System.exit(jobTopK.waitForCompletion(true) ? 0 : 1);
     }
 }
