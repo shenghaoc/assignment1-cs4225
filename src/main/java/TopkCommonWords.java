@@ -21,6 +21,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 public class TopkCommonWords {
 
     static HashSet<String> stopWords;
+    static final int k = 20;
 
     public static class TokenizerMapper
             extends Mapper<Object, Text, Text, IntWritable>{
@@ -108,7 +109,7 @@ public class TopkCommonWords {
             // meaning one word and corresponding word count separated by space
             String[] tokens = value.toString().split("\\s+");
             word.set(tokens[0]);
-            context.write(new IntWritable(Integer.parseInt(tokens[1])), word);
+            context.write(new IntWritable(-Integer.parseInt(tokens[1])), word);
         }
     }
 
@@ -117,11 +118,13 @@ public class TopkCommonWords {
         public void reduce(IntWritable key, Iterable<Text> values,
                            Context context
         ) throws IOException, InterruptedException {
-            Text tmp = new Text();
-            for (Text val : values) {
-                tmp = val;
+            if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
+                Text tmp = new Text();
+                for (Text val : values) {
+                    tmp = val;
+                }
+                context.write(tmp, new IntWritable(-key.get()));
             }
-            context.write(tmp, key);
         }
     }
 
