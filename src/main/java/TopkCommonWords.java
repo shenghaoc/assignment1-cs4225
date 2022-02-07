@@ -1,9 +1,8 @@
-// Matric Number:
-// Name:
-// WordCount.java
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
@@ -118,8 +117,12 @@ public class TopkCommonWords {
         public void reduce(IntWritable key, Iterable<Text> values,
                            Context context
         ) throws IOException, InterruptedException {
-                Text tmp = new Text();
-                for (Text val : values) {
+            ArrayList<Text> sortedValues = new ArrayList<>();
+            for (Text val : values) {
+                sortedValues.add(new Text(val));
+            }
+            sortedValues.sort(Collections.reverseOrder());
+                for (Text val : sortedValues) {
                     if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
                         context.write(new IntWritable(-key.get()), val);
                     }
