@@ -114,17 +114,16 @@ public class TopkCommonWords {
     }
 
     public static class IntSumReducerTopK
-            extends Reducer<IntWritable, Text, Text, IntWritable> {
+            extends Reducer<IntWritable, Text, IntWritable, Text> {
         public void reduce(IntWritable key, Iterable<Text> values,
                            Context context
         ) throws IOException, InterruptedException {
-            if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
                 Text tmp = new Text();
                 for (Text val : values) {
-                    tmp = val;
+                    if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
+                        context.write(new IntWritable(-key.get()), val);
+                    }
                 }
-                context.write(tmp, new IntWritable(-key.get()));
-            }
         }
     }
 
@@ -177,8 +176,8 @@ public class TopkCommonWords {
         jobTopK.setMapOutputValueClass(Text.class);
         // No combiner as output of word count would not have repeated words
         jobTopK.setReducerClass(IntSumReducerTopK.class);
-        jobTopK.setOutputKeyClass(Text.class);
-        jobTopK.setOutputValueClass(IntWritable.class);
+        jobTopK.setOutputKeyClass(IntWritable.class);
+        jobTopK.setOutputValueClass(Text.class);
         FileInputFormat.addInputPath(jobTopK, new Path("wccg", "part-r-00000"));
         FileOutputFormat.setOutputPath(jobTopK, new Path(args[3]));
         System.exit(jobTopK.waitForCompletion(true) ? 0 : 1);
