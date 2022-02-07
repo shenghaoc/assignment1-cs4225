@@ -57,8 +57,8 @@ public class TopkCommonWords {
         }
     }
 
-    public static class TopKTokenizerMapper
-            extends Mapper<Object, Text, Text, IntWritable>{
+    public static class TokenizerMapperWordCount
+    extends Mapper<Object, Text, Text, IntWritable>{
 
         private Text word = new Text();
 
@@ -72,8 +72,8 @@ public class TopkCommonWords {
         }
     }
 
-    public static class TopKIntSumReducer
-            extends Reducer<Text,IntWritable,Text,IntWritable> {
+    public static class IntSumReducerCommonGreater
+    extends Reducer<Text,IntWritable,Text,IntWritable> {
         private IntWritable result = new IntWritable();
 
         public void reduce(Text key, Iterable<IntWritable> values,
@@ -97,6 +97,33 @@ public class TopkCommonWords {
         }
     }
 
+    public static class TokenizerMapperWordCountInverted
+            extends Mapper<Object, Text, IntWritable, Text>{
+
+        private Text word = new Text();
+
+        public void map(Object key, Text value, Context context
+        ) throws IOException, InterruptedException {
+            // Input is processed one line at a time,
+            // meaning one word and corresponding word count separated by space
+            String[] tokens = value.toString().split("\\s+");
+            word.set(tokens[0]);
+            context.write(new IntWritable(Integer.parseInt(tokens[1])), word);
+        }
+    }
+
+    public static class IntSumReducerTopK
+            extends Reducer<IntWritable, Text, Text, IntWritable> {
+        public void reduce(IntWritable key, Iterable<Text> values,
+                           Context context
+        ) throws IOException, InterruptedException {
+            Text tmp = new Text();
+            for (Text val : values) {
+                tmp = val;
+            }
+            context.write(tmp, key);
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         stopWords = Files.lines(Paths.get(args[2]))
@@ -126,16 +153,30 @@ public class TopkCommonWords {
         FileOutputFormat.setOutputPath(jobWc2, new Path("wc2"));
         jobWc2.waitForCompletion(true);
 
-        Configuration confTopK = new Configuration();
-        Job jobTopK = Job.getInstance(confTopK, "top k common words");
-        jobTopK.setJarByClass(TopkCommonWords.class);
-        jobTopK.setMapperClass(TopKTokenizerMapper.class);
+        Configuration confCommonGreater = new Configuration();
+        Job jobCommonGreater = Job.getInstance(confCommonGreater, "common words");
+        jobCommonGreater.setJarByClass(TopkCommonWords.class);
+        jobCommonGreater.setMapperClass(TokenizerMapperWordCount.class);
         // No combiner as output of word count would not have repeated words
-        jobTopK.setReducerClass(TopKIntSumReducer.class);
+        jobCommonGreater.setReducerClass(IntSumReducerCommonGreater.class);
+        jobCommonGreater.setOutputKeyClass(Text.class);
+        jobCommonGreater.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(jobCommonGreater, new Path("wc1", "part-r-00000"));
+        FileInputFormat.addInputPath(jobCommonGreater, new Path("wc2", "part-r-00000"));
+        FileOutputFormat.setOutputPath(jobCommonGreater, new Path("wccg"));
+        jobCommonGreater.waitForCompletion(true);
+
+        Configuration confTopK = new Configuration();
+        Job jobTopK = Job.getInstance(confTopK, "top k");
+        jobTopK.setJarByClass(TopkCommonWords.class);
+        jobTopK.setMapperClass(TokenizerMapperWordCountInverted.class);
+        jobTopK.setMapOutputKeyClass(IntWritable.class);
+        jobTopK.setMapOutputValueClass(Text.class);
+        // No combiner as output of word count would not have repeated words
+        jobTopK.setReducerClass(IntSumReducerTopK.class);
         jobTopK.setOutputKeyClass(Text.class);
         jobTopK.setOutputValueClass(IntWritable.class);
-        FileInputFormat.addInputPath(jobTopK, new Path("wc1", "part-r-00000"));
-        FileInputFormat.addInputPath(jobTopK, new Path("wc2", "part-r-00000"));
+        FileInputFormat.addInputPath(jobTopK, new Path("wccg", "part-r-00000"));
         FileOutputFormat.setOutputPath(jobTopK, new Path(args[3]));
         System.exit(jobTopK.waitForCompletion(true) ? 0 : 1);
     }
