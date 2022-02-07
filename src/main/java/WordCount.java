@@ -58,19 +58,31 @@ public class WordCount {
     }
 
     public static void main(String[] args) throws Exception {
-        stopWords = Files.lines(Paths.get("input", "stopwords.txt"))
+        stopWords = Files.lines(Paths.get(args[2]))
                 .collect(Collectors.toCollection(HashSet::new));
 
-        Configuration conf = new Configuration();
-        Job job = Job.getInstance(conf, "word count");
-        job.setJarByClass(WordCount.class);
-        job.setMapperClass(TokenizerMapper.class);
-        job.setCombinerClass(IntSumReducer.class);
-        job.setReducerClass(IntSumReducer.class);
-        job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(IntWritable.class);
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        Configuration confWc1 = new Configuration();
+        Job jobWc1 = Job.getInstance(confWc1, "word count 1");
+        jobWc1.setJarByClass(WordCount.class);
+        jobWc1.setMapperClass(TokenizerMapper.class);
+        jobWc1.setCombinerClass(IntSumReducer.class);
+        jobWc1.setReducerClass(IntSumReducer.class);
+        jobWc1.setOutputKeyClass(Text.class);
+        jobWc1.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(jobWc1, new Path(args[0]));
+        FileOutputFormat.setOutputPath(jobWc1, new Path("wc1"));
+        jobWc1.waitForCompletion(true);
+
+        Configuration confWc2 = new Configuration();
+        Job jobWc2 = Job.getInstance(confWc2, "word count 2");
+        jobWc2.setJarByClass(WordCount.class);
+        jobWc2.setMapperClass(TokenizerMapper.class);
+        jobWc2.setCombinerClass(IntSumReducer.class);
+        jobWc2.setReducerClass(IntSumReducer.class);
+        jobWc2.setOutputKeyClass(Text.class);
+        jobWc2.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(jobWc2, new Path(args[1]));
+        FileOutputFormat.setOutputPath(jobWc2, new Path("wc2"));
+        System.exit(jobWc2.waitForCompletion(true) ? 0 : 1);
     }
 }
