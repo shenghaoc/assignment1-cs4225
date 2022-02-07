@@ -2,7 +2,12 @@
 // Name:
 // WordCount.java
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.stream.Collectors;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -16,6 +21,8 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class WordCount {
 
+    static Set<String> stopWords;
+
     public static class TokenizerMapper
             extends Mapper<Object, Text, Text, IntWritable>{
 
@@ -26,8 +33,11 @@ public class WordCount {
         ) throws IOException, InterruptedException {
             StringTokenizer itr = new StringTokenizer(value.toString());
             while (itr.hasMoreTokens()) {
-                word.set(itr.nextToken());
-                context.write(word, one);
+                String tmp = itr.nextToken();
+                if (!stopWords.contains(tmp)) {
+                    word.set(tmp);
+                    context.write(word, one);
+                }
             }
         }
     }
@@ -49,6 +59,9 @@ public class WordCount {
     }
 
     public static void main(String[] args) throws Exception {
+        stopWords = Files.lines(Paths.get("input", "stopwords.txt"))
+                .collect(Collectors.toCollection(HashSet::new));
+
         Configuration conf = new Configuration();
         Job job = Job.getInstance(conf, "word count");
         job.setJarByClass(WordCount.class);
