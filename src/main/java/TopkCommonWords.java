@@ -72,6 +72,31 @@ public class TopkCommonWords {
         }
     }
 
+    public static class TopKIntSumReducer
+            extends Reducer<Text,IntWritable,Text,IntWritable> {
+        private IntWritable result = new IntWritable();
+
+        public void reduce(Text key, Iterable<IntWritable> values,
+                           Context context
+        ) throws IOException, InterruptedException {
+            int cnt = 0;
+            int greaterCommonCnt = 0;
+            for (IntWritable val : values) {
+                cnt++;
+                int tmp = val.get();
+                if (tmp > greaterCommonCnt) {
+                    greaterCommonCnt = tmp;
+                }
+            }
+
+            // If value occurs more than once, i.e. in more than one file, it is a common word
+            if (cnt > 1) {
+                result.set(greaterCommonCnt);
+                context.write(key, result);
+            }
+        }
+    }
+
 
     public static void main(String[] args) throws Exception {
         stopWords = Files.lines(Paths.get(args[2]))
@@ -105,8 +130,8 @@ public class TopkCommonWords {
         Job jobTopK = Job.getInstance(confTopK, "top k common words");
         jobTopK.setJarByClass(TopkCommonWords.class);
         jobTopK.setMapperClass(TopKTokenizerMapper.class);
-        jobTopK.setCombinerClass(IntSumReducer.class);
-        jobTopK.setReducerClass(IntSumReducer.class);
+        // No combiner as output of word count would not have repeated words
+        jobTopK.setReducerClass(TopKIntSumReducer.class);
         jobTopK.setOutputKeyClass(Text.class);
         jobTopK.setOutputValueClass(IntWritable.class);
         FileInputFormat.addInputPath(jobTopK, new Path("wc1", "part-r-00000"));
