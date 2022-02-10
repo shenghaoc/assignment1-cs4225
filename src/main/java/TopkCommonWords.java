@@ -78,17 +78,22 @@ public class TopkCommonWords {
     public static class TokenizerMapperWordCountInverted
             extends Mapper<Object, Text, WordCountKeyPair, IntWritable>{
 
+        private Text word = new Text();
         private WordCountKeyPair pair = new WordCountKeyPair();
-        private IntWritable dummy = new IntWritable();
+        private IntWritable count = new IntWritable();
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
             // Input is processed one line at a time,
             // meaning one word and corresponding word count separated by space
             String[] tokens = value.toString().split("\\s+");
-            pair.setWord(new Text(tokens[0]));
-            pair.setCount(new IntWritable(Integer.parseInt(tokens[1])));
-            context.write(pair, dummy);
+            
+            word.set(tokens[0]);
+            pair.setWord(word);
+            count.set(Integer.parseInt(tokens[1]));
+            pair.setCount(count);
+            
+            context.write(pair, count);
         }
     }
 
