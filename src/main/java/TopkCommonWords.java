@@ -1,8 +1,8 @@
+import java.io.DataInput;
+import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
@@ -11,6 +11,8 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -98,35 +100,80 @@ public class TopkCommonWords {
     }
 
     public static class TokenizerMapperWordCountInverted
-            extends Mapper<Object, Text, IntWritable, Text>{
+            extends Mapper<Object, Text, CompositeKeyPair, IntWritable>{
 
-        private Text word = new Text();
+        private CompositeKeyPair pair = new CompositeKeyPair();
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
             // Input is processed one line at a time,
             // meaning one word and corresponding word count separated by space
             String[] tokens = value.toString().split("\\s+");
-            word.set(tokens[0]);
-            context.write(new IntWritable(-Integer.parseInt(tokens[1])), word);
+            pair.setWord(new Text(tokens[0]));
+            pair.setCount(new IntWritable(Integer.parseInt(tokens[1])));
+            context.write(pair, new IntWritable());
         }
     }
 
     public static class IntSumReducerTopK
-            extends Reducer<IntWritable, Text, IntWritable, Text> {
-        public void reduce(IntWritable key, Iterable<Text> values,
+            extends Reducer<CompositeKeyPair, IntWritable, IntWritable, Text> {
+        public void reduce(CompositeKeyPair key, Iterable<IntWritable> values,
                            Context context
         ) throws IOException, InterruptedException {
-            ArrayList<Text> sortedValues = new ArrayList<>();
-            for (Text val : values) {
-                sortedValues.add(new Text(val));
+            if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
+                        context.write(key.getCount(), key.getWord());
             }
-            sortedValues.sort(Collections.reverseOrder());
-                for (Text val : sortedValues) {
-                    if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
-                        context.write(new IntWritable(-key.get()), val);
-                    }
-                }
+        }
+    }
+
+    public static class CompositeKeyPair
+            implements Writable, WritableComparable<CompositeKeyPair> {
+        private Text word = new Text();
+        private IntWritable count = new IntWritable();
+
+        CompositeKeyPair() { }
+
+        @Override
+        public int compareTo(CompositeKeyPair pair) {
+            int compareValue = this.count.compareTo(pair.getCount());
+            if (compareValue == 0) {
+                compareValue = word.compareTo(pair.getWord());
+            }
+            return -compareValue;
+        }
+
+        private void setWord(Text word) {
+            this.word = word;
+        }
+
+        private void setCount(IntWritable count) {
+            this.count = count;
+        }
+
+        private Text getWord() {
+            return word;
+        }
+
+        private IntWritable getCount() {
+            return count;
+        }
+
+        @Override
+        public void write(DataOutput dataOutput) throws IOException {
+            dataOutput.writeUTF(word.toString());
+            dataOutput.writeInt(Integer.parseInt(count.toString()));
+        }
+
+        @Override
+        public void readFields(DataInput dataInput) throws IOException {
+            word.set(dataInput.readUTF());
+            count.set(dataInput.readInt());
+        }
+
+        public CompositeKeyPair read(DataInput in) throws IOException {
+            CompositeKeyPair w = new CompositeKeyPair();
+            w.readFields(in);
+            return w;
         }
     }
 
@@ -175,8 +222,8 @@ public class TopkCommonWords {
         Job jobTopK = Job.getInstance(confTopK, "top k");
         jobTopK.setJarByClass(TopkCommonWords.class);
         jobTopK.setMapperClass(TokenizerMapperWordCountInverted.class);
-        jobTopK.setMapOutputKeyClass(IntWritable.class);
-        jobTopK.setMapOutputValueClass(Text.class);
+        jobTopK.setMapOutputKeyClass(CompositeKeyPair.class);
+        jobTopK.setMapOutputValueClass(IntWritable.class);
         // No combiner as output of word count would not have repeated words
         jobTopK.setReducerClass(IntSumReducerTopK.class);
         jobTopK.setOutputKeyClass(IntWritable.class);
