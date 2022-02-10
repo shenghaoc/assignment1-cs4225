@@ -3,7 +3,9 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
@@ -17,6 +19,7 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class TopkCommonWords {
@@ -25,9 +28,11 @@ public class TopkCommonWords {
     static final int k = 20;
 
     public static class TokenizerMapper
-            extends Mapper<Object, Text, Text, IntWritable>{
+            extends Mapper<Object, Text, Text, FileCountWritable>{
 
         private final static IntWritable one = new IntWritable(1);
+        private Text file = new Text();
+        private FileCountWritable fc = new FileCountWritable();
         private Text word = new Text();
 
         public void map(Object key, Text value, Context context
@@ -37,72 +42,43 @@ public class TopkCommonWords {
                 String tmp = itr.nextToken();
                 if (!stopWords.contains(tmp)) {
                     word.set(tmp);
-                    context.write(word, one);
+
+                    String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
+                    file.set(fileName);
+                    fc.setFile(file);
+                    fc.setCount(one);
+
+                    context.write(word, fc);
                 }
             }
         }
     }
 
     public static class IntSumReducer
-            extends Reducer<Text,IntWritable,Text,IntWritable> {
+            extends Reducer<Text, FileCountWritable,Text,IntWritable> {
         private IntWritable result = new IntWritable();
 
-        public void reduce(Text key, Iterable<IntWritable> values,
+        public void reduce(Text key, Iterable<FileCountWritable> values,
                            Context context
         ) throws IOException, InterruptedException {
-            int sum = 0;
-            for (IntWritable val : values) {
-                sum += val.get();
+            HashMap<String, Integer> fileCountMap = new HashMap<>();
+
+            for (FileCountWritable val : values) {
+                String fileName = val.getFile().toString();
+                int count = fileCountMap.getOrDefault(fileName, 0);
+                fileCountMap.put(fileName, count + val.getCount().get());
             }
-            result.set(sum);
-            context.write(key, result);
-        }
-    }
-
-    public static class TokenizerMapperWordCount
-    extends Mapper<Object, Text, Text, IntWritable>{
-
-        private Text word = new Text();
-
-        public void map(Object key, Text value, Context context
-        ) throws IOException, InterruptedException {
-            // Input is processed one line at a time,
-            // meaning one word and corresponding word count separated by space
-            String[] tokens = value.toString().split("\\s+");
-            word.set(tokens[0]);
-            context.write(word, new IntWritable(Integer.parseInt(tokens[1])));
-        }
-    }
-
-    public static class IntSumReducerCommonGreater
-    extends Reducer<Text,IntWritable,Text,IntWritable> {
-        private IntWritable result = new IntWritable();
-
-        public void reduce(Text key, Iterable<IntWritable> values,
-                           Context context
-        ) throws IOException, InterruptedException {
-            int cnt = 0;
-            int greaterCommonCnt = 0;
-            for (IntWritable val : values) {
-                cnt++;
-                int tmp = val.get();
-                if (tmp > greaterCommonCnt) {
-                    greaterCommonCnt = tmp;
-                }
-            }
-
-            // If value occurs more than once, i.e. in more than one file, it is a common word
-            if (cnt > 1) {
-                result.set(greaterCommonCnt);
+            if (fileCountMap.size() > 1) {
+                result.set(Collections.max(fileCountMap.values()));
                 context.write(key, result);
             }
         }
     }
 
     public static class TokenizerMapperWordCountInverted
-            extends Mapper<Object, Text, CompositeKeyPair, IntWritable>{
+            extends Mapper<Object, Text, WordCountKeyPair, IntWritable>{
 
-        private CompositeKeyPair pair = new CompositeKeyPair();
+        private WordCountKeyPair pair = new WordCountKeyPair();
         private IntWritable dummy = new IntWritable();
 
         public void map(Object key, Text value, Context context
@@ -117,8 +93,8 @@ public class TopkCommonWords {
     }
 
     public static class IntSumReducerTopK
-            extends Reducer<CompositeKeyPair, IntWritable, IntWritable, Text> {
-        public void reduce(CompositeKeyPair key, Iterable<IntWritable> values,
+            extends Reducer<WordCountKeyPair, IntWritable, IntWritable, Text> {
+        public void reduce(WordCountKeyPair key, Iterable<IntWritable> values,
                            Context context
         ) throws IOException, InterruptedException {
             if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
@@ -127,15 +103,57 @@ public class TopkCommonWords {
         }
     }
 
-    public static class CompositeKeyPair
-            implements Writable, WritableComparable<CompositeKeyPair> {
+    public static class FileCountWritable
+            implements Writable {
+        private Text file = new Text();
+        private IntWritable count = new IntWritable();
+
+        FileCountWritable() { }
+
+        private void setFile(Text file) {
+            this.file = file;
+        }
+
+        private void setCount(IntWritable count) {
+            this.count = count;
+        }
+
+        private Text getFile() {
+            return file;
+        }
+
+        private IntWritable getCount() {
+            return count;
+        }
+
+        @Override
+        public void write(DataOutput dataOutput) throws IOException {
+            dataOutput.writeUTF(file.toString());
+            dataOutput.writeInt(count.get());
+        }
+
+        @Override
+        public void readFields(DataInput dataInput) throws IOException {
+            file.set(dataInput.readUTF());
+            count.set(dataInput.readInt());
+        }
+
+        public FileCountWritable read(DataInput in) throws IOException {
+            FileCountWritable w = new FileCountWritable();
+            w.readFields(in);
+            return w;
+        }
+    }
+
+    public static class WordCountKeyPair
+            implements Writable, WritableComparable<WordCountKeyPair> {
         private Text word = new Text();
         private IntWritable count = new IntWritable();
 
-        CompositeKeyPair() { }
+        WordCountKeyPair() { }
 
         @Override
-        public int compareTo(CompositeKeyPair pair) {
+        public int compareTo(WordCountKeyPair pair) {
             int compareValue = this.count.compareTo(pair.getCount());
             if (compareValue == 0) {
                 compareValue = word.compareTo(pair.getWord());
@@ -162,7 +180,7 @@ public class TopkCommonWords {
         @Override
         public void write(DataOutput dataOutput) throws IOException {
             dataOutput.writeUTF(word.toString());
-            dataOutput.writeInt(Integer.parseInt(count.toString()));
+            dataOutput.writeInt(count.get());
         }
 
         @Override
@@ -171,8 +189,8 @@ public class TopkCommonWords {
             count.set(dataInput.readInt());
         }
 
-        public CompositeKeyPair read(DataInput in) throws IOException {
-            CompositeKeyPair w = new CompositeKeyPair();
+        public WordCountKeyPair read(DataInput in) throws IOException {
+            WordCountKeyPair w = new WordCountKeyPair();
             w.readFields(in);
             return w;
         }
@@ -182,40 +200,17 @@ public class TopkCommonWords {
         stopWords = Files.lines(Paths.get(args[2]))
                 .collect(Collectors.toCollection(HashSet::new));
 
-        Configuration confWc1 = new Configuration();
-        Job jobWc1 = Job.getInstance(confWc1, "word count 1");
-        jobWc1.setJarByClass(TopkCommonWords.class);
-        jobWc1.setMapperClass(TokenizerMapper.class);
-        jobWc1.setCombinerClass(IntSumReducer.class);
-        jobWc1.setReducerClass(IntSumReducer.class);
-        jobWc1.setOutputKeyClass(Text.class);
-        jobWc1.setOutputValueClass(IntWritable.class);
-        FileInputFormat.addInputPath(jobWc1, new Path(args[0]));
-        FileOutputFormat.setOutputPath(jobWc1, new Path("wc1"));
-        jobWc1.waitForCompletion(true);
-
-        Configuration confWc2 = new Configuration();
-        Job jobWc2 = Job.getInstance(confWc2, "word count 2");
-        jobWc2.setJarByClass(TopkCommonWords.class);
-        jobWc2.setMapperClass(TokenizerMapper.class);
-        jobWc2.setCombinerClass(IntSumReducer.class);
-        jobWc2.setReducerClass(IntSumReducer.class);
-        jobWc2.setOutputKeyClass(Text.class);
-        jobWc2.setOutputValueClass(IntWritable.class);
-        FileInputFormat.addInputPath(jobWc2, new Path(args[1]));
-        FileOutputFormat.setOutputPath(jobWc2, new Path("wc2"));
-        jobWc2.waitForCompletion(true);
-
         Configuration confCommonGreater = new Configuration();
-        Job jobCommonGreater = Job.getInstance(confCommonGreater, "common words");
+        Job jobCommonGreater = Job.getInstance(confCommonGreater, "word count 1");
         jobCommonGreater.setJarByClass(TopkCommonWords.class);
-        jobCommonGreater.setMapperClass(TokenizerMapperWordCount.class);
-        // No combiner as output of word count would not have repeated words
-        jobCommonGreater.setReducerClass(IntSumReducerCommonGreater.class);
+        jobCommonGreater.setMapperClass(TokenizerMapper.class);
+        jobCommonGreater.setMapOutputKeyClass(Text.class);
+        jobCommonGreater.setMapOutputValueClass(FileCountWritable.class);
+        jobCommonGreater.setReducerClass(IntSumReducer.class);
         jobCommonGreater.setOutputKeyClass(Text.class);
         jobCommonGreater.setOutputValueClass(IntWritable.class);
-        FileInputFormat.addInputPath(jobCommonGreater, new Path("wc1", "part-r-00000"));
-        FileInputFormat.addInputPath(jobCommonGreater, new Path("wc2", "part-r-00000"));
+        FileInputFormat.addInputPath(jobCommonGreater, new Path(args[0]));
+        FileInputFormat.addInputPath(jobCommonGreater, new Path(args[1]));
         FileOutputFormat.setOutputPath(jobCommonGreater, new Path("wccg"));
         jobCommonGreater.waitForCompletion(true);
 
@@ -223,7 +218,7 @@ public class TopkCommonWords {
         Job jobTopK = Job.getInstance(confTopK, "top k");
         jobTopK.setJarByClass(TopkCommonWords.class);
         jobTopK.setMapperClass(TokenizerMapperWordCountInverted.class);
-        jobTopK.setMapOutputKeyClass(CompositeKeyPair.class);
+        jobTopK.setMapOutputKeyClass(WordCountKeyPair.class);
         jobTopK.setMapOutputValueClass(IntWritable.class);
         // No combiner as output of word count would not have repeated words
         jobTopK.setReducerClass(IntSumReducerTopK.class);
