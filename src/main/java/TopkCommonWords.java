@@ -103,6 +103,7 @@ public class TopkCommonWords {
             extends Mapper<Object, Text, CompositeKeyPair, IntWritable>{
 
         private CompositeKeyPair pair = new CompositeKeyPair();
+        private IntWritable dummy = new IntWritable();
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
@@ -111,7 +112,7 @@ public class TopkCommonWords {
             String[] tokens = value.toString().split("\\s+");
             pair.setWord(new Text(tokens[0]));
             pair.setCount(new IntWritable(Integer.parseInt(tokens[1])));
-            context.write(pair, new IntWritable());
+            context.write(pair, dummy);
         }
     }
 
