@@ -25,14 +25,21 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class TopkCommonWords {
 
-    static HashSet<String> stopWords;
     static final int k = 20;
 
     public static class TokenizerMapper
             extends Mapper<Object, Text, Text, Text>{
 
+        private HashSet<String> stopWords;
         private Text word = new Text();
         private Text file = new Text();
+
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            stopWords = Files.lines(Paths.get(conf.get("stop words file name")))
+                    .collect(Collectors.toCollection(HashSet::new));
+        }
+
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
@@ -149,12 +156,10 @@ public class TopkCommonWords {
     }
 
     public static void main(String[] args) throws Exception {
-        stopWords = Files.lines(Paths.get(args[2]))
-                .collect(Collectors.toCollection(HashSet::new));
-
         Path tmpDir = new Path("wccg");
 
         Configuration confCommonGreater = new Configuration();
+        confCommonGreater.set("stop words file name", args[2]);
         Job jobCommonGreater = Job.getInstance(confCommonGreater, "word count common greater");
         jobCommonGreater.setJarByClass(TopkCommonWords.class);
         jobCommonGreater.setMapperClass(TokenizerMapper.class);
