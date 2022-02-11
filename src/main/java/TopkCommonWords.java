@@ -10,6 +10,7 @@ import java.util.StringTokenizer;
 import java.util.stream.Collectors;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
@@ -151,8 +152,10 @@ public class TopkCommonWords {
         stopWords = Files.lines(Paths.get(args[2]))
                 .collect(Collectors.toCollection(HashSet::new));
 
+        Path tmpDir = new Path("wccg");
+
         Configuration confCommonGreater = new Configuration();
-        Job jobCommonGreater = Job.getInstance(confCommonGreater, "word count 1");
+        Job jobCommonGreater = Job.getInstance(confCommonGreater, "word count common greater");
         jobCommonGreater.setJarByClass(TopkCommonWords.class);
         jobCommonGreater.setMapperClass(TokenizerMapper.class);
         jobCommonGreater.setMapOutputKeyClass(Text.class);
@@ -162,8 +165,11 @@ public class TopkCommonWords {
         jobCommonGreater.setOutputValueClass(IntWritable.class);
         FileInputFormat.addInputPath(jobCommonGreater, new Path(args[0]));
         FileInputFormat.addInputPath(jobCommonGreater, new Path(args[1]));
-        FileOutputFormat.setOutputPath(jobCommonGreater, new Path("wccg"));
+        FileOutputFormat.setOutputPath(jobCommonGreater, tmpDir);
         jobCommonGreater.waitForCompletion(true);
+
+        FileSystem fs = tmpDir.getFileSystem(confCommonGreater);
+        fs.deleteOnExit(tmpDir);
 
         Configuration confTopK = new Configuration();
         Job jobTopK = Job.getInstance(confTopK, "top k");
@@ -175,7 +181,7 @@ public class TopkCommonWords {
         jobTopK.setReducerClass(IntSumReducerTopK.class);
         jobTopK.setOutputKeyClass(IntWritable.class);
         jobTopK.setOutputValueClass(Text.class);
-        FileInputFormat.addInputPath(jobTopK, new Path("wccg", "part-r-00000"));
+        FileInputFormat.addInputPath(jobTopK, tmpDir);
         FileOutputFormat.setOutputPath(jobTopK, new Path(args[3]));
         System.exit(jobTopK.waitForCompletion(true) ? 0 : 1);
     }
