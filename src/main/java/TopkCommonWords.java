@@ -28,12 +28,10 @@ public class TopkCommonWords {
     static final int k = 20;
 
     public static class TokenizerMapper
-            extends Mapper<Object, Text, Text, FileCountWritable>{
+            extends Mapper<Object, Text, Text, Text>{
 
-        private final static IntWritable one = new IntWritable(1);
-        private Text file = new Text();
-        private FileCountWritable fc = new FileCountWritable();
         private Text word = new Text();
+        private Text file = new Text();
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
@@ -42,31 +40,27 @@ public class TopkCommonWords {
                 String tmp = itr.nextToken();
                 if (!stopWords.contains(tmp)) {
                     word.set(tmp);
-
                     String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
                     file.set(fileName);
-                    fc.setFile(file);
-                    fc.setCount(one);
-
-                    context.write(word, fc);
+                    context.write(word, file);
                 }
             }
         }
     }
 
     public static class IntSumReducer
-            extends Reducer<Text, FileCountWritable,Text,IntWritable> {
+            extends Reducer<Text, Text,Text,IntWritable> {
         private IntWritable result = new IntWritable();
 
-        public void reduce(Text key, Iterable<FileCountWritable> values,
+        public void reduce(Text key, Iterable<Text> values,
                            Context context
         ) throws IOException, InterruptedException {
             HashMap<String, Integer> fileCountMap = new HashMap<>();
 
-            for (FileCountWritable val : values) {
-                String fileName = val.getFile().toString();
+            for (Text val : values) {
+                String fileName = val.toString();
                 int count = fileCountMap.getOrDefault(fileName, 0);
-                fileCountMap.put(fileName, count + val.getCount().get());
+                fileCountMap.put(fileName, count + 1);
             }
             if (fileCountMap.size() > 1) {
                 result.set(Collections.max(fileCountMap.values()));
@@ -105,48 +99,6 @@ public class TopkCommonWords {
             if (context.getCounter("org.apache.hadoop.mapred.Task$Counter",  "REDUCE_OUTPUT_RECORDS").getValue() < k) {
                         context.write(key.getCount(), key.getWord());
             }
-        }
-    }
-
-    public static class FileCountWritable
-            implements Writable {
-        private Text file = new Text();
-        private IntWritable count = new IntWritable();
-
-        FileCountWritable() { }
-
-        private void setFile(Text file) {
-            this.file = file;
-        }
-
-        private void setCount(IntWritable count) {
-            this.count = count;
-        }
-
-        private Text getFile() {
-            return file;
-        }
-
-        private IntWritable getCount() {
-            return count;
-        }
-
-        @Override
-        public void write(DataOutput dataOutput) throws IOException {
-            dataOutput.writeUTF(file.toString());
-            dataOutput.writeInt(count.get());
-        }
-
-        @Override
-        public void readFields(DataInput dataInput) throws IOException {
-            file.set(dataInput.readUTF());
-            count.set(dataInput.readInt());
-        }
-
-        public FileCountWritable read(DataInput in) throws IOException {
-            FileCountWritable w = new FileCountWritable();
-            w.readFields(in);
-            return w;
         }
     }
 
@@ -193,12 +145,6 @@ public class TopkCommonWords {
             word.set(dataInput.readUTF());
             count.set(dataInput.readInt());
         }
-
-        public WordCountKeyPair read(DataInput in) throws IOException {
-            WordCountKeyPair w = new WordCountKeyPair();
-            w.readFields(in);
-            return w;
-        }
     }
 
     public static void main(String[] args) throws Exception {
@@ -210,7 +156,7 @@ public class TopkCommonWords {
         jobCommonGreater.setJarByClass(TopkCommonWords.class);
         jobCommonGreater.setMapperClass(TokenizerMapper.class);
         jobCommonGreater.setMapOutputKeyClass(Text.class);
-        jobCommonGreater.setMapOutputValueClass(FileCountWritable.class);
+        jobCommonGreater.setMapOutputValueClass(Text.class);
         jobCommonGreater.setReducerClass(IntSumReducer.class);
         jobCommonGreater.setOutputKeyClass(Text.class);
         jobCommonGreater.setOutputValueClass(IntWritable.class);
