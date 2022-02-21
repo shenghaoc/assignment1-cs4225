@@ -25,8 +25,6 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class TopkCommonWords {
 
-    static final int k = 20;
-
     public static class TokenizerMapper
             extends Mapper<Object, Text, Text, Text>{
 
@@ -47,11 +45,11 @@ public class TopkCommonWords {
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
             StringTokenizer itr = new StringTokenizer(value.toString());
+            String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
             while (itr.hasMoreTokens()) {
                 String tmp = itr.nextToken();
                 if (!stopWords.contains(tmp)) {
                     word.set(tmp);
-                    String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
                     file.set(fileName);
                     context.write(word, file);
                 }
@@ -82,7 +80,6 @@ public class TopkCommonWords {
 
     public static class TokenizerMapperWordCountInverted
             extends Mapper<Object, Text, WordCountKeyPair, IntWritable>{
-
         private Text word = new Text();
         private WordCountKeyPair pair = new WordCountKeyPair();
         private IntWritable count = new IntWritable();
@@ -104,6 +101,9 @@ public class TopkCommonWords {
 
     public static class IntSumReducerTopK
             extends Reducer<WordCountKeyPair, IntWritable, IntWritable, Text> {
+
+        private final int k = 20;
+
         public void reduce(WordCountKeyPair key, Iterable<IntWritable> values,
                            Context context
         ) throws IOException, InterruptedException {
